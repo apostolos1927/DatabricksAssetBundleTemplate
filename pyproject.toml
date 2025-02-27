@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "lib"
+version = "0.0.1"
+description = ""
+authors = ["Apostolos"]
+readme = "README.md"
+packages = [{ include = "lib", from = "src" }]
+
+ 
+
+[tool.poetry.dependencies]
+python = "^3.8"
+pyspark = "3.5.0"
+delta = "0.4.2"
+
+ 
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

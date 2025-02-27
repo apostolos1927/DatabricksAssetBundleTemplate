@@ -1,0 +1,34 @@
+resources:
+  jobs:
+    example_pipeline:
+      name: ${var.env_name}_pipeline
+      schedule:
+        quartz_cron_expression: 0 0 23 * * ?
+        timezone_id: America/New_York
+        pause_status: UNPAUSED
+      tasks:
+        - task_key: schema_creation
+          notebook_task:
+            notebook_path: ${workspace.root_path}/files/notebooks/code/schema_creation
+            source: WORKSPACE
+          job_cluster_key: demo_cluster
+          libraries:
+            - whl: /Workspace/${workspace.root_path}/files/dist/lib-0.0.1-py3-none-any.whl
+      job_clusters:
+        - job_cluster_key: demo_cluster
+          new_cluster:
+            spark_version: 14.3.x-scala2.12
+            spark_conf:
+              spark.memory.fraction: 0.8
+            node_type_id: Standard_DS3_v2
+            autoscale:
+              min_workers: 1
+              max_workers: 1
+            data_security_mode: SINGLE_USER
+            runtime_engine: PHOTON
+      parameters:
+        - name: schema
+          default: ${var.schema}
+        - name: env_name
+          default: ${var.env_name}    
+    

@@ -1,0 +1,36 @@
+# This is a Databricks asset bundle definition
+# See https://docs.databricks.com/dev-tools/bundles/index.html for documentation.
+bundle:
+  name: template
+
+include:
+  - templates/*.yaml
+
+variables:
+  env_name:
+    default: dev
+    description: Environment name
+  schema:
+    default: test
+    description: Schema for Demo
+
+workspace:
+  root_path:  /Shared/Demo/.bundle/${bundle.name}/${bundle.target}
+
+# Do we need targets? Make sense to leave for future modifications
+targets:
+  dev:
+  prd:
+
+# Need to specify when wheel package is not pre-built, otherwise comment this block
+artifacts:
+  default:
+    type: whl
+    build: poetry build
+    path: .
+
+# For passing wheel package to workspace
+
+sync:
+  include:
+    - ./dist/*.whl

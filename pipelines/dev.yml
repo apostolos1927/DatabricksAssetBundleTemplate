@@ -1,0 +1,135 @@
+name: $(TeamProject)_$(Build.DefinitionName)_$(SourceBranchName)_$(Date:yyyyMMdd)_$(Build.RequestedFor)_$(Rev:.r)
+
+parameters:
+  - name: action
+    displayName: "Action:"
+    type: string
+    default: deploy
+    values:
+      - deploy
+      - destroy
+  - name: env_name
+    displayName: "Environment name"
+    default: 'dev'
+    values:
+      - 'dev'
+  - name: schema
+    displayName: "Schema name"
+    default: 'test'
+    values:
+      - 'test'
+  
+
+variables:
+  - name: system.debug
+    value: true
+  - name: service_connection_name_var
+    value: "service_connection_demo"
+  - name: key_vault_name_var
+    value: "kvdemoapo"
+
+trigger: none
+
+
+stages:
+  - stage: build
+    displayName: Validate DAB template
+    pool:
+        name: "Azure Pipelines"
+    jobs:
+      - job: Initial_config
+        displayName: "Validate DAB template"
+        steps:
+          - task: AzureKeyVault@2
+            inputs:
+              azureSubscription: $(service_connection_name_var)
+              KeyVaultName: $(key_vault_name_var)
+              SecretsFilter: "*"
+              RunAsPreJob: true
+          - script: |
+              python3 --version
+              sudo apt update
+              sudo apt-get --assume-yes install python3-pip
+              sudo pip install poetry
+              export PATH="/home/AzDevOps/.local/bin:$PATH"
+              poetry -V
+            displayName: Installing poetry
+          - script: |
+              sudo apt-get --assume-yes install zip
+              curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo sh
+              databricks -v
+            displayName: "Installing databricks CLI"
+          - script: |
+              databricks bundle validate -t ${{ parameters.env_name }} --var "env_name=${{ parameters.env_name }},schema=${{ parameters.schema }}"
+            displayName: "Validate bundle"
+            env:
+              DATABRICKS_HOST:  $(databricks-${{ parameters.env_name }}-url)
+              DATABRICKS_TOKEN: $(databricks-${{ parameters.env_name }}-token)
+          - script: |
+              rm -r .databricks
+            displayName: "Removing .databricks folder to avoid errors in next stage"
+          - task: PublishPipelineArtifact@1
+            inputs:
+              targetPath: $(System.DefaultWorkingDirectory)
+              artifactName: build_result
+
+  - stage: deploy
+    ${{ if eq(parameters.action, 'deploy') }}:
+      displayName: "Deploy DAB template"
+    ${{ if eq(parameters.action, 'destroy') }}:
+      displayName: "Destroy DAB template"
+    pool:
+      name: "Azure Pipelines"
+    jobs:
+      - ${{ if eq(parameters.action, 'destroy') }}:
+          - job: ValidateDestroy
+            displayName: "Validate Destroy"
+            pool: server
+            steps:
+              - task: ManualValidation@0
+                timeoutInMinutes: 60
+                inputs:
+                  instructions: "Do you really want to destroy asset bundle?"
+                  onTimeout: "fail"
+      - deployment: deploy
+        ${{ if eq(parameters.action, 'destroy') }}:
+          dependsOn: ValidateDestroy
+        displayName: 'Deployment to "${{ parameters.env_name }}" environment'
+        environment: ${{ parameters.env_name }}
+        workspace:
+          clean: all
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: none
+                - task: AzureKeyVault@2
+                  inputs:
+                    azureSubscription: $(service_connection_name_var)
+                    KeyVaultName: $(key_vault_name_var)
+                    SecretsFilter: "*"
+                    RunAsPreJob: true
+                - script: |
+                    python3 --version
+                    sudo apt update
+                    sudo apt-get --assume-yes install python3-pip
+                    sudo pip install poetry
+                    export PATH="/home/AzDevOps/.local/bin:$PATH"
+                    poetry -V
+                  displayName: Installing poetry
+                - script: |
+                    sudo apt-get --assume-yes install zip
+                    curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sudo sh
+                    databricks -v
+                  displayName: "Installing databricks CLI"
+                - script: |
+                    databricks bundle ${{ parameters.action }} -t ${{ parameters.env_name }} --var "env_name=${{ parameters.env_name }},schema=${{ parameters.schema }}" $AUTO_APPROVE --log-level info
+                  displayName: "${{ parameters.action }} bundle"
+                  workingDirectory: "$(Pipeline.Workspace)/build_result/"
+                  env:
+                    DATABRICKS_HOST:  $(databricks-${{ parameters.env_name }}-url)
+                    DATABRICKS_TOKEN: $(databricks-${{ parameters.env_name }}-token)
+                    ${{ if eq(parameters.action, 'deploy') }}:
+                      AUTO_APPROVE: ""
+                    ${{ if eq(parameters.action, 'destroy') }}:
+                      AUTO_APPROVE: "--auto-approve"
